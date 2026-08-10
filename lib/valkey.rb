@@ -141,6 +141,9 @@ class Valkey
     # Library name and client info tag (CLIENT SETINFO LIB-NAME)
     if options[:client_info_tag]
       tag = options[:client_info_tag].to_s
+      if tag.empty?
+        raise ArgumentError, "client_info_tag must not be empty"
+      end
       if tag.match?(/\s/)
         raise ArgumentError, "client_info_tag must not contain whitespace, got: #{tag.inspect}"
       end
