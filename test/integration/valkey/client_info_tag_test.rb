@@ -12,6 +12,13 @@ module ValkeyTests
   module ClientInfoTag
     # --- Validation tests (no server needed) ---
 
+    def test_client_info_tag_rejects_empty_string
+      error = assert_raises(ArgumentError) do
+        Valkey.new(host: "127.0.0.1", port: test_port, timeout: test_timeout, client_info_tag: "")
+      end
+      assert_match(/client_info_tag must not be empty/, error.message)
+    end
+
     def test_client_info_tag_rejects_whitespace_space
       error = assert_raises(ArgumentError) do
         Valkey.new(host: "127.0.0.1", port: test_port, timeout: test_timeout, client_info_tag: "has space")
