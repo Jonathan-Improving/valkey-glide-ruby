@@ -141,12 +141,8 @@ class Valkey
     # Library name and client info tag (CLIENT SETINFO LIB-NAME)
     if options[:client_info_tag]
       tag = options[:client_info_tag].to_s
-      if tag.empty?
-        raise ArgumentError, "client_info_tag must not be empty"
-      end
-      if tag.match?(/\s/)
-        raise ArgumentError, "client_info_tag must not contain whitespace, got: #{tag.inspect}"
-      end
+      raise ArgumentError, "client_info_tag must not be empty" if tag.empty?
+      raise ArgumentError, "client_info_tag must not contain whitespace, got: #{tag.inspect}" if tag.match?(/\s/)
 
       base = options[:lib_name] ? options[:lib_name].to_s : "GlideRuby"
       json_options["lib_name"] = "#{base}(#{tag})"
