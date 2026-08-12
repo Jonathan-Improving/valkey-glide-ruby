@@ -2,6 +2,10 @@
 
 ## 1.1.0 (Pending)
 
+### Breaking Changes
+
+* Ruby: `client` dispatcher uses `public_send` instead of `send` — subclasses that previously relied on dispatching to private `client_*` helpers via the `client(:subcommand)` interface must make those methods public. This prevents accidental invocation of unrelated private methods and aligns with Ruby best practices. ([PR #1](https://github.com/Jonathan-Improving/valkey-glide-ruby/pull/1))
+
 ### Fixes
 
 * Ruby: Fix `xpending`'s `idle:` option, which was emitted after `start`/`end`/`count` instead of before them. The Valkey `XPENDING` grammar is `XPENDING key group [IDLE ms] start end count [consumer]`, so the trailing `IDLE <ms>` was parsed by the server as the optional `consumer` argument, causing `xpending(key, group, start, end, count, idle: ms)` to silently return an empty result set instead of the idle-filtered entries. Also, `idle: false` was previously indistinguishable from `idle: nil` (both are falsy in Ruby) and silently dropped the filter instead of forwarding it to the server; `idle:` is now only omitted when explicitly `nil` ([#270](https://github.com/valkey-io/valkey-glide-ruby/issues/270), [#241](https://github.com/valkey-io/valkey-glide-ruby/issues/241)).
