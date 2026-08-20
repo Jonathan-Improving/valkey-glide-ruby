@@ -44,6 +44,7 @@ module ValkeyTests
 
     def test_client_info_tag_appends_to_default_lib_name
       skip("client_info_tag tests only run on standalone mode") if cluster_mode?
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(client_info_tag: "my-framework:1.0")
       begin
@@ -56,6 +57,7 @@ module ValkeyTests
 
     def test_lib_name_override
       skip("lib_name tests only run on standalone mode") if cluster_mode?
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(lib_name: "CustomLib")
       begin
@@ -68,6 +70,7 @@ module ValkeyTests
 
     def test_lib_name_with_client_info_tag
       skip("lib_name + client_info_tag tests only run on standalone mode") if cluster_mode?
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(lib_name: "MyLib", client_info_tag: "v2.0")
       begin
@@ -80,6 +83,7 @@ module ValkeyTests
 
     def test_default_lib_name_when_no_options
       skip("default lib_name tests only run on standalone mode") if cluster_mode?
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client
       begin
@@ -92,6 +96,7 @@ module ValkeyTests
 
     def test_client_info_tag_with_special_characters
       skip("client_info_tag tests only run on standalone mode") if cluster_mode?
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(client_info_tag: "lmcache:1.2.3-beta+build.42")
       begin
