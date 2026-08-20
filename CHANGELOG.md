@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-* Ruby: `client` dispatcher uses `public_send` instead of `send` — subclasses that previously relied on dispatching to private `client_*` helpers via the `client(:subcommand)` interface must make those methods public. This prevents accidental invocation of unrelated private methods and aligns with Ruby best practices. ([PR #1](https://github.com/Jonathan-Improving/valkey-glide-ruby/pull/1))
+* Ruby: `client` dispatcher uses `public_send` instead of `send` — subclasses that previously relied on dispatching to private `client_*` helpers via the `client(:subcommand)` interface must make those methods public. This prevents accidental invocation of unrelated private methods and aligns with Ruby best practices. As a direct consequence, subcommands that are intentionally kept private (e.g. the internal client-side-caching `client_*` helpers removed from the public interface) are no longer reachable through `client(:subcommand)` and now raise `NoMethodError` instead of being silently dispatched. ([#246](https://github.com/valkey-io/valkey-glide-ruby/pull/246))
 
 ### Fixes
 
