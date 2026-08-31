@@ -10,34 +10,58 @@
 # Reference: valkey-io/valkey-glide#6389 (Python implementation)
 module ValkeyTests
   module ClientInfoTag
-    # --- Validation tests (no server needed) ---
+    # --- Tag composition / empty handling (no character validation here) ---
+    #
+    # The wrapper performs no character validation of client_info_tag or
+    # lib_name; that is glide-core's responsibility (upstream #6891). The one
+    # wrapper-side rule is compositional: an empty tag is treated as absent,
+    # matching core's empty-means-absent semantics, so it must neither raise nor
+    # compose a "GlideRuby()" that core would reject.
 
-    def test_client_info_tag_rejects_empty_string
-      error = assert_raises(ArgumentError) do
-        Valkey.new(host: "127.0.0.1", port: PORT, timeout: TIMEOUT, client_info_tag: "")
+    def test_empty_client_info_tag_is_treated_as_absent
+      skip("client_info_tag tests only run on standalone mode") if cluster_mode?
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
+
+      client = _new_client(client_info_tag: "")
+      begin
+        info = client.call("CLIENT", "INFO")
+        assert_match(/lib-name=GlideRuby/, info)
+        refute_match(/lib-name=GlideRuby\(/, info)
+      ensure
+        client&.close
       end
-      assert_match(/client_info_tag must not be empty/, error.message)
     end
 
-    def test_client_info_tag_rejects_whitespace_space
-      error = assert_raises(ArgumentError) do
-        Valkey.new(host: "127.0.0.1", port: PORT, timeout: TIMEOUT, client_info_tag: "has space")
+    def test_empty_client_info_tag_with_lib_name_is_treated_as_absent
+      skip("client_info_tag tests only run on standalone mode") if cluster_mode?
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
+
+      client = _new_client(lib_name: "CustomLib", client_info_tag: "")
+      begin
+        info = client.call("CLIENT", "INFO")
+        assert_match(/lib-name=CustomLib/, info)
+        refute_match(/lib-name=CustomLib\(/, info)
+      ensure
+        client&.close
       end
-      assert_match(/client_info_tag must not contain whitespace/, error.message)
     end
 
-    def test_client_info_tag_rejects_whitespace_tab
-      error = assert_raises(ArgumentError) do
-        Valkey.new(host: "127.0.0.1", port: PORT, timeout: TIMEOUT, client_info_tag: "has\ttab")
-      end
-      assert_match(/client_info_tag must not contain whitespace/, error.message)
-    end
+    # Whitespace in a tag is rejected by core (it fails the library-name
+    # grammar), not by the wrapper.
+    CORE_REJECTED_TAGS = {
+      "space" => "has space",
+      "tab" => "has\ttab",
+      "newline" => "has\nnewline"
+    }.freeze
 
-    def test_client_info_tag_rejects_whitespace_newline
-      error = assert_raises(ArgumentError) do
-        Valkey.new(host: "127.0.0.1", port: PORT, timeout: TIMEOUT, client_info_tag: "has\nnewline")
+    CORE_REJECTED_TAGS.each do |label, value|
+      define_method(:"test_core_rejects_client_info_tag_#{label}") do
+        error = assert_raises(Valkey::BaseError) do
+          client = Valkey.new(host: "127.0.0.1", port: PORT, timeout: TIMEOUT, client_info_tag: value)
+          client.ping
+        end
+        assert_match(/library name must contain only printable ASCII/, error.message)
       end
-      assert_match(/client_info_tag must not contain whitespace/, error.message)
     end
 
     # --- Core-side library-name validation (glide-core, upstream #6891) ---

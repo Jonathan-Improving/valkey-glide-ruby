@@ -151,12 +151,18 @@ class Valkey
     # Client name (user-configurable)
     json_options["client_name"] = options[:client_name] if options[:client_name]
 
-    # Library name and client info tag (CLIENT SETINFO LIB-NAME)
-    if options[:client_info_tag]
-      tag = options[:client_info_tag].to_s
-      raise ArgumentError, "client_info_tag must not be empty" if tag.empty?
-      raise ArgumentError, "client_info_tag must not contain whitespace, got: #{tag.inspect}" if tag.match?(/\s/)
+    # Library name and client info tag (CLIENT SETINFO LIB-NAME).
+    #
+    # Validation is glide-core's responsibility (see valkey-io/valkey-glide#6891):
+    # it validates the composed library name before client creation and surfaces a
+    # configuration error, so the wrapper deliberately performs no character
+    # checking of its own. The only wrapper-side rule is compositional: an empty
+    # tag is treated as absent, matching core's own empty-means-absent semantics,
+    # rather than composing a "base()" that core would reject.
+    tag = options[:client_info_tag]&.to_s
+    tag = nil if tag && tag.empty?
 
+    if tag
       base = options[:lib_name] ? options[:lib_name].to_s : "GlideRuby"
       json_options["lib_name"] = "#{base}(#{tag})"
     elsif options[:lib_name]
