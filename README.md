@@ -114,7 +114,7 @@ client.get("foo")
 | `nodes` | Array of `{ host:, port: }` hashes |
 | `protocol` | `:resp2` (default) or `:resp3` |
 | `client_name` | `CLIENT SETNAME` value |
-| `lib_name` | Full override of the `CLIENT SETINFO LIB-NAME` value (default `GlideRuby`). |
+| `lib_name` | Full override of the `CLIENT SETINFO LIB-NAME` value (default `GlideRuby`). Validated by glide-core: printable ASCII excluding space, `(` and `)`, plus at most one matched trailing `(tag)`; an invalid value raises `Valkey::CannotConnectError` at client creation. An empty value falls back to the default. |
 | `client_info_tag` | Appends a parenthesized tag to the resolved library name while keeping the base token intact — e.g. `GlideRuby(my-framework:1.0)`, or `<lib_name>(<tag>)` when combined with `lib_name`. Must not contain whitespace or be empty. Preferred over `lib_name` for framework attribution because it preserves GLIDE adoption visibility. |
 | `reconnect_attempts`, `reconnect_delay`, `reconnect_delay_max` | Connection retry strategy |
 | `read_from` | Read routing: the `Valkey::ReadFrom::*` constants: `PRIMARY`, `PREFER_REPLICA`, `AZ_AFFINITY`, `AZ_AFFINITY_REPLICAS_AND_PRIMARY`.`AZ_AFFINITY`/`AZ_AFFINITY_REPLICAS_AND_PRIMARY` require `client_az` to also be set. |

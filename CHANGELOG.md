@@ -14,6 +14,8 @@
 
 ### Changes
 
+* Ruby: add `lib_name` and `client_info_tag` connection options controlling the `CLIENT SETINFO LIB-NAME` value reported to the server. `client_info_tag` appends a parenthesized tag to the resolved library name while keeping the base token intact (`GlideRuby(my-framework:1.0)`), and is preferred over `lib_name` for framework attribution because it preserves GLIDE adoption visibility; `lib_name` fully overrides the name, and the two combine as `<lib_name>(<tag>)`. An empty or whitespace-containing `client_info_tag` raises `ArgumentError`; an empty `lib_name` falls back to the default `GlideRuby`. Library names are validated by glide-core against printable ASCII excluding space and parentheses (plus at most one matched trailing `(tag)`), so an invalid name now fails client creation with `Valkey::CannotConnectError` instead of silently connecting with a name the server ignores ([#246](https://github.com/valkey-io/valkey-glide-ruby/pull/246))
+
 * Ruby: fixed cd workflow to correctly build the ffi with **glibc 2.17** ([#223](https://github.com/valkey-io/valkey-glide-ruby/issues/223))
 * Ruby: scripting commands now dispatch real `EVAL` / `EVALSHA` / `SCRIPT LOAD` to the server instead of a client-side script container ([#213](https://github.com/valkey-io/valkey-glide-ruby/issues/213)). Three behavior changes:
   * `eval` / `evalsha` (and the `_ro` variants) now accept the standard integer key-count form used by `valkey-cli` and the Valkey docs — `eval(script, 1, "mykey", "myarg")`. It previously made the count `KEYS[1]`, shifted the real key into `ARGV[1]`, and dropped the remaining arguments without raising.
