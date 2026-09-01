@@ -7,9 +7,25 @@
 # to the default library name (GlideRuby), while lib_name provides a
 # full override.
 #
-# Reference: valkey-io/valkey-glide#6389 (Python implementation)
+# References:
+# - valkey-io/valkey-glide#6389 (Python reference implementation)
+# - valkey-io/valkey-glide#6891 (core-side library-name validation, which this
+#   file's rejection expectations depend on)
 module ValkeyTests
   module ClientInfoTag
+    # Asserts the EXACT lib-name reported by CLIENT INFO.
+    #
+    # CLIENT INFO fields are space-delimited, so an unanchored
+    # `assert_match(/lib-name=CustomLib/)` also passes for "CustomLibSURPRISE" or
+    # "CustomLib(unexpected)" — i.e. it cannot fail for the wrong-composition bug
+    # these tests exist to catch. Anchoring on the delimiter fixes the whole class
+    # of that bug rather than one instance.
+    def assert_lib_name(expected, info)
+      actual = info[/(?:\A|\s)lib-name=(\S*)/, 1]
+      assert_equal expected, actual,
+                   "expected lib-name=#{expected.inspect}, got #{actual.inspect}"
+    end
+
     # --- Tag composition / empty handling (no character validation here) ---
     #
     # The wrapper performs no character validation of client_info_tag or
@@ -24,8 +40,7 @@ module ValkeyTests
       client = _new_client(client_info_tag: "")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=GlideRuby/, info)
-        refute_match(/lib-name=GlideRuby\(/, info)
+        assert_lib_name("GlideRuby", info)
       ensure
         client&.close
       end
@@ -37,8 +52,7 @@ module ValkeyTests
       client = _new_client(lib_name: "CustomLib", client_info_tag: "")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=CustomLib/, info)
-        refute_match(/lib-name=CustomLib\(/, info)
+        assert_lib_name("CustomLib", info)
       ensure
         client&.close
       end
@@ -54,7 +68,7 @@ module ValkeyTests
       client = _new_client(lib_name: "", client_info_tag: "my-framework:1.0")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=GlideRuby\(my-framework:1\.0\)/, info)
+        assert_lib_name("GlideRuby(my-framework:1.0)", info)
       ensure
         client&.close
       end
@@ -70,11 +84,23 @@ module ValkeyTests
 
     CORE_REJECTED_TAGS.each do |label, value|
       define_method(:"test_core_rejects_client_info_tag_#{label}") do
-        error = assert_raises(Valkey::BaseError) do
+        client = nil
+        # Core validates at Client::new, so client CREATION raises — there is no
+        # command to send. Assert the documented Valkey::CannotConnectError
+        # (README) rather than the Valkey::BaseError root.
+        #
+        # Verified caveat: a connection failure ALSO raises CannotConnectError, so
+        # narrowing the class does not by itself distinguish "rejected the name"
+        # from "could not reach the server". The message assertion below is
+        # therefore load-bearing, not decorative — do not remove it. It does couple
+        # this test to an upstream message string; that is a deliberate trade for
+        # not having a false green.
+        error = assert_raises(Valkey::CannotConnectError) do
           client = _new_client(client_info_tag: value)
-          client.ping
         end
         assert_match(/library name must contain only printable ASCII/, error.message)
+      ensure
+        client&.close
       end
     end
 
@@ -87,9 +113,10 @@ module ValkeyTests
     # creation, rather than panicking or silently connecting with a name the
     # server ignores.
     #
-    # Grammar enforced by core: printable ASCII \x21-\x27 and \x2A-\x7E (i.e.
-    # excluding space, "(" and ")"), plus at most one matched, non-empty
-    # trailing "(tag)". An empty value is treated as absent.
+    # The accepted grammar is documented canonically in README's Connection
+    # Options (the `lib_name` row); it is deliberately not restated here, since
+    # independent copies of it have already drifted apart. The cases below are
+    # transcribed from core's own regex at the pinned commit.
     CORE_REJECTED_LIB_NAMES = {
       "space" => "Glide Ruby",
       "tab" => "Glide\tRuby",
@@ -105,17 +132,30 @@ module ValkeyTests
 
     CORE_REJECTED_LIB_NAMES.each do |label, value|
       define_method(:"test_core_rejects_lib_name_#{label}") do
-        error = assert_raises(Valkey::BaseError) do
+        client = nil
+        # See the note on CORE_REJECTED_TAGS above: creation raises, the documented
+        # error class is asserted, and the message assertion is load-bearing
+        # because a connection failure shares that class.
+        error = assert_raises(Valkey::CannotConnectError) do
           client = _new_client(lib_name: value)
-          client.ping
         end
         assert_match(/library name must contain only printable ASCII/, error.message)
+      ensure
+        client&.close
       end
     end
 
     def test_core_accepts_valid_composed_lib_name_and_tag
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
+
       client = _new_client(lib_name: "custom-lib", client_info_tag: "framework:1.2")
-      client.close
+      begin
+        # Assert the composed name actually reached the server — construction not
+        # raising says nothing about what was sent.
+        assert_lib_name("custom-lib(framework:1.2)", client.call("CLIENT", "INFO"))
+      ensure
+        client&.close
+      end
     end
 
     def test_empty_lib_name_falls_back_to_default_without_error
@@ -124,8 +164,7 @@ module ValkeyTests
       client = _new_client(lib_name: "")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=GlideRuby/, info)
-        refute_match(/lib-name=GlideRuby\(/, info)
+        assert_lib_name("GlideRuby", info)
       ensure
         client&.close
       end
@@ -139,7 +178,7 @@ module ValkeyTests
       client = _new_client(client_info_tag: "my-framework:1.0")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=GlideRuby\(my-framework:1\.0\)/, info)
+        assert_lib_name("GlideRuby(my-framework:1.0)", info)
       ensure
         client&.close
       end
@@ -151,7 +190,7 @@ module ValkeyTests
       client = _new_client(lib_name: "CustomLib")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=CustomLib/, info)
+        assert_lib_name("CustomLib", info)
       ensure
         client&.close
       end
@@ -163,7 +202,7 @@ module ValkeyTests
       client = _new_client(lib_name: "MyLib", client_info_tag: "v2.0")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=MyLib\(v2\.0\)/, info)
+        assert_lib_name("MyLib(v2.0)", info)
       ensure
         client&.close
       end
@@ -175,7 +214,7 @@ module ValkeyTests
       client = _new_client
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=GlideRuby/, info)
+        assert_lib_name("GlideRuby", info)
       ensure
         client&.close
       end
@@ -187,7 +226,7 @@ module ValkeyTests
       client = _new_client(client_info_tag: "lmcache:1.2.3-beta+build.42")
       begin
         info = client.call("CLIENT", "INFO")
-        assert_match(/lib-name=GlideRuby\(lmcache:1\.2\.3-beta\+build\.42\)/, info)
+        assert_lib_name("GlideRuby(lmcache:1.2.3-beta+build.42)", info)
       ensure
         client&.close
       end
