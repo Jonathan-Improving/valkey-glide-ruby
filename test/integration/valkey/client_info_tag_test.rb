@@ -19,7 +19,6 @@ module ValkeyTests
     # compose a "GlideRuby()" that core would reject.
 
     def test_empty_client_info_tag_is_treated_as_absent
-      skip("client_info_tag tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(client_info_tag: "")
@@ -33,7 +32,6 @@ module ValkeyTests
     end
 
     def test_empty_client_info_tag_with_lib_name_is_treated_as_absent
-      skip("client_info_tag tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(lib_name: "CustomLib", client_info_tag: "")
@@ -41,6 +39,22 @@ module ValkeyTests
         info = client.call("CLIENT", "INFO")
         assert_match(/lib-name=CustomLib/, info)
         refute_match(/lib-name=CustomLib\(/, info)
+      ensure
+        client&.close
+      end
+    end
+
+    # Regression: an empty lib_name combined with a tag previously composed
+    # "(tag)" — an empty string is truthy in Ruby, so the override looked
+    # configured — which glide-core rejects. An empty override must be treated as
+    # absent so the default base is used.
+    def test_empty_lib_name_with_tag_uses_default_base
+      omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
+
+      client = _new_client(lib_name: "", client_info_tag: "my-framework:1.0")
+      begin
+        info = client.call("CLIENT", "INFO")
+        assert_match(/lib-name=GlideRuby\(my-framework:1\.0\)/, info)
       ensure
         client&.close
       end
@@ -57,7 +71,7 @@ module ValkeyTests
     CORE_REJECTED_TAGS.each do |label, value|
       define_method(:"test_core_rejects_client_info_tag_#{label}") do
         error = assert_raises(Valkey::BaseError) do
-          client = Valkey.new(host: "127.0.0.1", port: PORT, timeout: TIMEOUT, client_info_tag: value)
+          client = _new_client(client_info_tag: value)
           client.ping
         end
         assert_match(/library name must contain only printable ASCII/, error.message)
@@ -92,7 +106,7 @@ module ValkeyTests
     CORE_REJECTED_LIB_NAMES.each do |label, value|
       define_method(:"test_core_rejects_lib_name_#{label}") do
         error = assert_raises(Valkey::BaseError) do
-          client = Valkey.new(host: "127.0.0.1", port: PORT, timeout: TIMEOUT, lib_name: value)
+          client = _new_client(lib_name: value)
           client.ping
         end
         assert_match(/library name must contain only printable ASCII/, error.message)
@@ -100,15 +114,11 @@ module ValkeyTests
     end
 
     def test_core_accepts_valid_composed_lib_name_and_tag
-      client = Valkey.new(
-        host: "127.0.0.1", port: PORT, timeout: TIMEOUT,
-        lib_name: "custom-lib", client_info_tag: "framework:1.2"
-      )
+      client = _new_client(lib_name: "custom-lib", client_info_tag: "framework:1.2")
       client.close
     end
 
     def test_empty_lib_name_falls_back_to_default_without_error
-      skip("lib_name tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(lib_name: "")
@@ -124,7 +134,6 @@ module ValkeyTests
     # --- Integration tests (server needed) ---
 
     def test_client_info_tag_appends_to_default_lib_name
-      skip("client_info_tag tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(client_info_tag: "my-framework:1.0")
@@ -137,7 +146,6 @@ module ValkeyTests
     end
 
     def test_lib_name_override
-      skip("lib_name tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(lib_name: "CustomLib")
@@ -150,7 +158,6 @@ module ValkeyTests
     end
 
     def test_lib_name_with_client_info_tag
-      skip("lib_name + client_info_tag tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(lib_name: "MyLib", client_info_tag: "v2.0")
@@ -163,7 +170,6 @@ module ValkeyTests
     end
 
     def test_default_lib_name_when_no_options
-      skip("default lib_name tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client
@@ -176,7 +182,6 @@ module ValkeyTests
     end
 
     def test_client_info_tag_with_special_characters
-      skip("client_info_tag tests only run on standalone mode") if cluster_mode?
       omit_version("7.2") # CLIENT SETINFO (lib-name) requires Valkey/Redis 7.2+
 
       client = _new_client(client_info_tag: "lmcache:1.2.3-beta+build.42")

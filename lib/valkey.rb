@@ -23,6 +23,43 @@ class Valkey
   include Utils
   include Commands
 
+  # Default value reported for `CLIENT SETINFO LIB-NAME`.
+  #
+  # The native artifact is normally compiled with `GLIDE_NAME=GlideRuby`, and
+  # glide-core falls back to that compile-time value when no runtime library name
+  # is sent. Resolving the same default here means the runtime value is always
+  # sent explicitly, so the reported name does not depend on how the native
+  # artifact happened to be built, while compile-time naming remains a fallback.
+  DEFAULT_LIB_NAME = "GlideRuby"
+
+  # Resolves the effective `CLIENT SETINFO LIB-NAME` value from the raw override
+  # and tag, without touching a connection or the FFI.
+  #
+  # This is a pure function so the full behavior matrix (default, override,
+  # tag-only, combined, and the empty-string forms of each) can be tested without
+  # a server, mirroring the resolvers used by the Java, Node, Python and Go
+  # clients.
+  #
+  # Character validity is deliberately *not* checked here — glide-core validates
+  # the composed name before client creation (see valkey-io/valkey-glide#6891)
+  # and is the single authority on it. The only rules applied are compositional:
+  # an empty override or tag means "not configured" (matching core's
+  # empty-means-absent semantics), so no `base()` or `(tag)` is ever composed.
+  #
+  # @param lib_name [String, nil] raw `lib_name` override, may be empty
+  # @param client_info_tag [String, nil] raw `client_info_tag`, may be empty
+  # @return [String] the effective library name
+  def self.resolve_lib_name(lib_name: nil, client_info_tag: nil)
+    base = lib_name&.to_s
+    base = nil if base && base.empty?
+
+    tag = client_info_tag&.to_s
+    tag = nil if tag && tag.empty?
+
+    resolved = base || DEFAULT_LIB_NAME
+    tag ? "#{resolved}(#{tag})" : resolved
+  end
+
   def pipelined(exception: true)
     pipeline = Pipeline.new
 
@@ -153,21 +190,18 @@ class Valkey
 
     # Library name and client info tag (CLIENT SETINFO LIB-NAME).
     #
-    # Validation is glide-core's responsibility (see valkey-io/valkey-glide#6891):
-    # it validates the composed library name before client creation and surfaces a
-    # configuration error, so the wrapper deliberately performs no character
-    # checking of its own. The only wrapper-side rule is compositional: an empty
-    # tag is treated as absent, matching core's own empty-means-absent semantics,
-    # rather than composing a "base()" that core would reject.
-    tag = options[:client_info_tag]&.to_s
-    tag = nil if tag && tag.empty?
-
-    if tag
-      base = options[:lib_name] ? options[:lib_name].to_s : "GlideRuby"
-      json_options["lib_name"] = "#{base}(#{tag})"
-    elsif options[:lib_name]
-      json_options["lib_name"] = options[:lib_name].to_s
-    end
+    # Composition/normalization lives in the pure `Valkey.resolve_lib_name`
+    # resolver so it is testable without a server or the FFI. Character validity
+    # is glide-core's responsibility (see valkey-io/valkey-glide#6891), so no
+    # character checking is performed here.
+    #
+    # The resolved value is always sent, so the reported library name does not
+    # depend on the native artifact having been compiled with
+    # `GLIDE_NAME=GlideRuby`.
+    json_options["lib_name"] = self.class.resolve_lib_name(
+      lib_name: options[:lib_name],
+      client_info_tag: options[:client_info_tag]
+    )
 
     # read_from parsing.
     json_options["read_from"] = options[:read_from] if options[:read_from]

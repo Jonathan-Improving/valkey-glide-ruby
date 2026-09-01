@@ -92,7 +92,13 @@ module Helper
     def extract_version_from_info(info)
       case info
       when Hash
-        info["valkey_version"] || info["redis_version"]
+        # A cluster INFO fans out per node, yielding { "host:port" => { ... } }
+        # rather than a flat field hash, so fall back to the first node's info
+        # when the version keys are not present at the top level. Without this,
+        # detection fails, `version` reports "0.0", and every version-gated test
+        # silently skips on cluster.
+        info["valkey_version"] || info["redis_version"] ||
+          (info.values.first && extract_version_from_info(info.values.first))
       when Array
         # Could be array of node responses; try first element
         first = info.first
