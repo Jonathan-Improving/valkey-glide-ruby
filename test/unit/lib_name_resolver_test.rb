@@ -102,10 +102,17 @@ class TestLibNameResolverUnit < Minitest::Test
     assert_equal "GlideRuby", Valkey.resolve_lib_name(lib_name: nil, client_info_tag: nil)
   end
 
-  # F-16: whitespace-only is NOT folded to absent — it is passed through and
-  # rejected by core. Pinned here so the behavior is deliberate and visible
-  # rather than incidental. (Whether it *should* fold is an open policy question,
-  # escalated as F-04; this test records today's behavior, not an endorsement.)
+  # F-16/F-04: whitespace-only is NOT folded to absent — it is passed through and
+  # rejected by core. This is settled policy, not incidental: client-side
+  # filtering is deliberately not performed, because the server is the authority
+  # on library-name validity and its error is the intended feedback for what is a
+  # caller mistake. Core's grammar excludes 0x20 (its ranges start at \x21), so
+  # "GlideRuby( )" fails validation and surfaces as Valkey::CannotConnectError at
+  # client creation.
+  #
+  # Do NOT "fix" this by normalizing whitespace away. Empty and whitespace are
+  # different cases on purpose: empty means absent (core returns Ok for it),
+  # whitespace is invalid input.
   def test_whitespace_only_values_are_not_folded_to_absent
     assert_equal "GlideRuby( )", Valkey.resolve_lib_name(client_info_tag: " ")
     assert_equal " ", Valkey.resolve_lib_name(lib_name: " ")

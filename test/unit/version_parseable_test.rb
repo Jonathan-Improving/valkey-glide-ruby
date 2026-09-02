@@ -47,16 +47,34 @@ class TestVersionParseableUnit < Minitest::Test
     "8.1.0 "
   ].freeze
 
-  ACCEPTED.each do |value|
-    define_method(:"test_accepts_#{value.gsub(/\W/, '_')}") do
+  # Method names are derived from the values, so they are INDEXED. Without the
+  # index, `gsub(/\W/, "_")` maps distinct entries onto one name — "8.1.0.",
+  # "8.1.0-" and "8.1.0 " all became `test_rejects_8_1_0_` — and `define_method`
+  # silently overwrites, so only the last survived. The suite still reported a
+  # green count while two assertions never ran: coverage claimed but not held.
+  ACCEPTED.each_with_index do |value, index|
+    define_method(:"test_accepts_#{index}_#{value.gsub(/\W/, '_')}") do
       assert Helper::Version.parseable?(value), "expected #{value.inspect} to be usable"
     end
   end
 
-  REJECTED.each do |value|
-    define_method(:"test_rejects_#{value.empty? ? 'empty_string' : value.gsub(/\W/, '_')}") do
+  REJECTED.each_with_index do |value, index|
+    define_method(:"test_rejects_#{index}_#{value.empty? ? 'empty_string' : value.gsub(/\W/, '_')}") do
       refute Helper::Version.parseable?(value), "expected #{value.inspect} to be rejected"
     end
+  end
+
+  # Guards the generator itself: if a future edit reintroduces value-derived
+  # naming, or adds a duplicate entry, the table silently shrinks again. Assert
+  # the generated method count matches the table size.
+  def test_every_table_entry_generates_a_distinct_test
+    accepted = self.class.instance_methods.grep(/\Atest_accepts_/)
+    rejected = self.class.instance_methods.grep(/\Atest_rejects_\d+_/)
+
+    assert_equal ACCEPTED.size, accepted.size,
+                 "ACCEPTED table has #{ACCEPTED.size} entries but generated #{accepted.size} tests"
+    assert_equal REJECTED.size, rejected.size,
+                 "REJECTED table has #{REJECTED.size} entries but generated #{rejected.size} tests"
   end
 
   def test_rejects_nil

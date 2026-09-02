@@ -33,29 +33,19 @@ class Valkey
   DEFAULT_LIB_NAME = "GlideRuby"
 
   # Resolves the effective `CLIENT SETINFO LIB-NAME` value from the raw override
-  # and tag, without touching a connection or the FFI.
+  # and tag. Pure — no connection, no FFI — so the whole matrix is unit-testable.
   #
-  # This is a pure function so the full behavior matrix (default, override,
-  # tag-only, combined, and the empty-string forms of each) can be tested without
-  # a server. The extraction parallels the resolvers in the Java, Node and Go
-  # clients, but note it is NOT behaviourally equivalent to them: those three also
-  # validate the value binding-side and raise a configuration error naming the
-  # offending field, whereas this binding delegates all character validation to
-  # glide-core by operator directive (see below).
+  # Applies compositional rules only; character validity is glide-core's
+  # (see valkey-io/valkey-glide#6891). An empty override or tag means "not
+  # configured", so neither `base()` nor `(tag)` is ever composed. A
+  # whitespace-only value is NOT normalized away — it is passed through and
+  # rejected by core, which is the intended behaviour: the server is the
+  # authority on library-name validity and its error is the intended feedback.
   #
-  # Character validity is deliberately *not* checked here — glide-core validates
-  # the composed name before client creation (see valkey-io/valkey-glide#6891)
-  # and is the single authority on it. The only rules applied are compositional:
-  # an empty override or tag means "not configured" (matching core's
-  # empty-means-absent semantics), so no `base()` or `(tag)` is ever composed.
+  # A `lib_name` already ending in "(...)" plus a tag composes "A(x)(y)", which
+  # core rejects — left to core, since inspecting the base is validation.
   #
-  # Note the composition rule is only meaningful for an unparenthesized base: a
-  # `lib_name` that already ends in "(...)" combined with a tag composes
-  # "A(x)(y)", which core rejects outright (its grammar allows at most one
-  # trailing tag). That is left to core rather than pre-empted here, since
-  # inspecting the base's characters is exactly the validation this binding does
-  # not do.
-  #
+  # @api private
   # @param lib_name [String, Symbol, nil] raw `lib_name` override, may be empty
   # @param client_info_tag [String, Symbol, nil] raw `client_info_tag`, may be empty
   # @return [String] the effective library name
@@ -70,15 +60,11 @@ class Valkey
 
   # Normalizes a client-identification value to a non-empty String or nil.
   #
-  # Accepts only String, Symbol or nil. This is a TYPE check, not character
-  # validation — character validity remains glide-core's responsibility. Blanket
-  # `to_s` coercion was actively harmful: `lib_name: false` (e.g. from
-  # `lib_name: config.custom_name?`) silently produced a client identifying
-  # itself to the server as "false", and arbitrary objects leaked either their
-  # inspect output, a JSON::GeneratorError for invalid UTF-8, or an exception
-  # raised by their own #to_s — none of which are Valkey errors, so the
-  # documented `rescue Valkey::BaseError` contract around client construction did
-  # not hold.
+  # Accepts only String, Symbol or nil — a TYPE check, not character validation.
+  # Blanket `to_s` was harmful: `lib_name: false` silently identified the client
+  # as "false", and arbitrary objects leaked inspect output or a
+  # JSON::GeneratorError, neither of which is a Valkey error, breaking the
+  # documented `rescue Valkey::BaseError` contract around construction.
   #
   # @param field [String] option name, used in the error message
   # @param value [String, Symbol, nil] the raw configured value
@@ -94,23 +80,11 @@ class Valkey
     end
 
     string = value.to_s
-    # Encoding precondition, not character validation. Two distinct vectors reach
-    # JSON.generate and raise JSON::GeneratorError, which is OUTSIDE the Valkey
-    # error hierarchy, so `rescue Valkey::BaseError` around client construction —
-    # the documented contract — would not catch them:
-    #
-    #   1. A String already tagged UTF-8 but holding invalid bytes. #encode is a
-    #      no-op when the target encoding matches the current one, so conversion
-    #      alone does NOT catch this; it needs #valid_encoding?.
-    #   2. A String in another encoding (e.g. ASCII-8BIT) whose bytes are not
-    #      representable as UTF-8. #valid_encoding? alone does NOT catch this,
-    #      because every byte sequence is valid ASCII-8BIT.
-    #
-    # Neither check alone is sufficient, so both are applied. Together they ask
-    # the question JSON will ask: can these bytes be represented as UTF-8?
-    #
-    # This screens BYTES, not characters: "café" satisfies both and is passed
-    # through untouched for glide-core to judge.
+    # Both checks are required: #valid_encoding? catches a String tagged UTF-8
+    # holding invalid bytes (where #encode is a no-op); #encode catches other
+    # encodings not representable as UTF-8 (where valid_encoding? is vacuously
+    # true). Either alone leaves a JSON::GeneratorError vector. Screens BYTES,
+    # not characters — "café" passes through for core to judge.
     unless string.valid_encoding?
       raise ArgumentError,
             "#{field} must not contain an invalid #{string.encoding} byte sequence"
@@ -118,7 +92,7 @@ class Valkey
 
     begin
       string = string.encode(Encoding::UTF_8)
-    rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError => e
+    rescue EncodingError => e
       raise ArgumentError,
             "#{field} must be convertible to UTF-8 (#{e.class}: #{e.message})"
     end
