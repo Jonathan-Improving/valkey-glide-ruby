@@ -22,6 +22,8 @@
 
 ### Changes
 
+* Ruby: Search: added valkey-search 1.3 support and RediSearch parity to the `FT.*` builder API. New: `in_keys`/`count`/`with_scores`/`scorer` on `SearchOptions`; `LoadField` (LOAD ... AS), `add_scores`/`scorer`/`with_cursor` on `AggregateOptions`; `WithCursor`, `ft_cursor_read`, `ft_cursor_del`; `FLOAT16`/`BFLOAT16` vector types and `unf` on sortable TEXT/TAG/NUMERIC fields; `filter`/`score_field`/`no_highlight` on `CreateOptions`; and `ft_hybrid` with `HybridSearchArm`, `HybridVsimArm`, `HybridVsimFilter`, `HybridCombine` and `HybridOptions`. `ft_hybrid`/`ft_cursor_read`/`ft_cursor_del` currently dispatch via a raw custom command rather than a typed `RequestType`, since the core RequestTypes they need are not yet in a released glide-core — see the gem's Limitations notes on each method. Cursors and `with_cursor` queries pin to the index slot's primary in cluster mode, matching the other GLIDE clients. A new `test/integration/modules/` harness and `utils/run-modules-ci-locally.sh` test this surface against a real valkey-search module via Docker, in addition to the vendored RediSearch `.so` the rest of the suite uses.
+
 * Ruby: Connection: added support for `Valkey::ReadFrom::AZ_AFFINITY_ALL_NODES`; String `client_az` values are trimmed, and all AZ-affinity strategies require a nonblank effective value. ([#349](https://github.com/valkey-io/valkey-glide-ruby/pull/349))
 
 * Ruby: Hashes: added support for `hgetdel(key, *fields)`. Requires Valkey 9.1. ([#348](https://github.com/valkey-io/valkey-glide-ruby/pull/348))

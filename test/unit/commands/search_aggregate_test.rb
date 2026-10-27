@@ -201,6 +201,32 @@ class TestSearchAggregate < Minitest::Test
     assert_match(/unsupported dialect/, err.message)
   end
 
+  def test_aggregate_options_load_fields_with_load_field_alias
+    opts = S::AggregateOptions.new(load: ["title", S::LoadField.new("price", alias: "p")])
+    assert_equal ["LOAD", 4, "title", "price", "AS", "p"], opts.to_args
+  end
+
+  def test_aggregate_options_add_scores
+    opts = S::AggregateOptions.new(add_scores: true)
+    assert_equal ["ADDSCORES"], opts.to_args
+  end
+
+  def test_aggregate_options_scorer
+    opts = S::AggregateOptions.new(scorer: "BM25STD")
+    assert_equal %w[SCORER BM25STD], opts.to_args
+  end
+
+  def test_aggregate_options_with_cursor
+    opts = S::AggregateOptions.new(with_cursor: S::WithCursor.new(count: 10))
+    assert_equal ["WITHCURSOR", "COUNT", 10], opts.to_args
+  end
+
+  def test_aggregate_options_dialect_scoring_cursor_order
+    opts = S::AggregateOptions.new(dialect: 2, add_scores: true, scorer: "BM25STD",
+                                   with_cursor: S::WithCursor.new(count: 1))
+    assert_equal ["DIALECT", 2, "ADDSCORES", "SCORER", "BM25STD", "WITHCURSOR", "COUNT", 1], opts.to_args
+  end
+
   def test_aggregate_options_rejects_non_clause
     err = assert_raises(ArgumentError) { S::AggregateOptions.new(clauses: ["GROUPBY"]) }
     assert_match(/AggregateClause/, err.message)

@@ -27,10 +27,28 @@ class Valkey
       # @param no_content [Boolean] emit NOCONTENT (keys only)
       # @param shard_scope [Symbol, nil] :all_shards or :some_shards
       # @param consistency [Symbol, nil] :consistent or :inconsistent
+      # @param in_keys [Array<String>, nil] restricts the search to only this
+      #   set of keys (INKEYS), filtering out any matching result whose key
+      #   is not in the list. `[]` (empty Array) differs from `nil`: an empty
+      #   Array emits `INKEYS 0` (matches nothing), `nil` omits INKEYS
+      #   entirely (matches on index content alone).
+      # @param count [Boolean] returns only the total matching-document
+      #   count, with no document rows. Emits `LIMIT 0 0` — the server
+      #   rejects a bare COUNT token outright — and is mutually exclusive
+      #   with `limit`.
+      # @param with_scores [Boolean] augments the output with each
+      #   document's relevance score (valkey-search 1.3.0, emits WITHSCORES)
+      # @param scorer [String, nil] the scoring function used to rank
+      #   results (valkey-search 1.3.0). `"BM25STD"` is currently the only
+      #   registered value; any other is rejected server-side. Has no
+      #   visible effect unless combined with `with_scores` (or inspected
+      #   indirectly via `sort_by`).
+      # @raise [ArgumentError] if count and limit are both set
       def initialize(limit: nil, return_fields: nil, params: nil, sort_by: nil,
                      sort_order: :asc, with_sort_keys: false, no_content: false,
                      verbatim: false, in_order: false, slop: nil, dialect: nil,
-                     timeout: nil, shard_scope: nil, consistency: nil)
+                     timeout: nil, shard_scope: nil, consistency: nil,
+                     in_keys: nil, count: false, with_scores: false, scorer: nil)
         raise ArgumentError, "with_sort_keys requires sort_by" if with_sort_keys && sort_by.nil?
         # The server honors NOCONTENT and silently drops the sort keys, but the
         # reply is still parsed as (key, sort_key) pairs — so the combination
@@ -41,6 +59,7 @@ class Valkey
                 "with_sort_keys cannot be combined with no_content: the server omits sort keys " \
                 "under NOCONTENT, so the reply cannot be parsed reliably"
         end
+        raise ArgumentError, "count and limit are mutually exclusive: count maps to LIMIT 0 0" if count && limit
 
         @limit = normalize_limit(limit)
         @return_tokens = expand_return_fields(return_fields)
@@ -56,6 +75,10 @@ class Valkey
         @timeout = timeout
         @shard_scope = shard_scope.nil? ? nil : Search.lookup_token(Search::SHARD_SCOPES, shard_scope, "shard scope")
         @consistency = consistency.nil? ? nil : Search.lookup_token(Search::CONSISTENCY, consistency, "consistency")
+        @in_keys = in_keys
+        @count = count
+        @with_scores = with_scores
+        @scorer = scorer
       end
 
       # @return [Array] FT.SEARCH option tokens (after `index query`), in wire order
@@ -66,12 +89,20 @@ class Valkey
         args << "INORDER" if @in_order
         args.push("SLOP", @slop) unless @slop.nil?
         args.push("LIMIT", @limit[0], @limit[1]) unless @limit.nil?
+        args.push("INKEYS", @in_keys.length, *@in_keys) unless @in_keys.nil?
         args.push("RETURN", @return_tokens.length, *@return_tokens) if @return_tokens && !@return_tokens.empty?
         append_sort_by(args)
         args << "WITHSORTKEYS" if @with_sort_keys
         args.concat(Search.params_tokens(@params))
         args.push("DIALECT", @dialect) unless @dialect.nil?
         args.push("TIMEOUT", @timeout) unless @timeout.nil?
+        # COUNT is not a real FT.SEARCH keyword — the server rejects a bare
+        # COUNT token outright. The count-only form it actually recognises
+        # is LIMIT 0 0; the constructor guard above has already confirmed
+        # @limit is unset (mutually exclusive) by the time this runs.
+        args.push("LIMIT", "0", "0") if @count
+        args << "WITHSCORES" if @with_scores
+        args.push("SCORER", @scorer) unless @scorer.nil?
         Search.append_cluster_flags(args, @shard_scope, @consistency)
         args
       end

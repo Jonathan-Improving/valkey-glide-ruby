@@ -218,16 +218,38 @@ class Valkey
     #
     # @see https://valkey.io/commands/ft.aggregate/
     class AggregateOptions
+      attr_reader :with_cursor
+
       # @param clauses [Array<AggregateClause>] ordered pipeline clauses
-      # @param load [Array<String>, :all, nil] LOAD fields, or :all for `LOAD *`
+      # @param load [Array<String, LoadField>, :all, nil] LOAD fields
+      #   (plain field identifiers and/or {LoadField} entries to rename via
+      #   AS — valkey-search 1.3.0; see {LoadField}'s docs for the
+      #   compatibility gate), or :all for `LOAD *`
       # @param params [Hash, nil] query parameters (PARAMS)
       # @param verbatim [Boolean] emit VERBATIM
       # @param in_order [Boolean] emit INORDER
       # @param slop [Integer, nil] emit `SLOP <n>`
       # @param dialect [Integer, nil] emit `DIALECT <n>` (only 2 is valid)
       # @param timeout [Integer, nil] emit `TIMEOUT <ms>`
+      # @param add_scores [Boolean] exposes the relevance score as a
+      #   pipeline field named `__score` (valkey-search 1.3.0). `__score`
+      #   can then be referenced like any other pipeline field in a
+      #   {LoadField}, {Apply} expression, or a {SortBy} key.
+      # @param scorer [String, nil] the scoring function used to compute
+      #   `__score` (valkey-search 1.3.0). `"BM25STD"` is currently the only
+      #   registered value. Has no visible effect unless combined with
+      #   `add_scores: true` (or inspected indirectly via a SORTBY on `__score`).
+      # @param with_cursor [WithCursor, nil] requests a paged reply instead
+      #   of the whole result set at once. The reply shape becomes a
+      #   two-element array of `[rows, cursor_id]`. A paged query, and every
+      #   subsequent {Valkey::Commands::VectorSearchCommands#ft_cursor_read}/`#ft_cursor_del`
+      #   against the cursor it opens, always reads from the PRIMARY of the
+      #   index's slot regardless of ReadFrom (D15) — a cursor is a
+      #   per-process, node-local server resource. A plain aggregate without
+      #   `with_cursor` is unaffected and still prefers replicas as normal.
       def initialize(clauses: [], load: nil, params: nil, verbatim: false,
-                     in_order: false, slop: nil, dialect: nil, timeout: nil)
+                     in_order: false, slop: nil, dialect: nil, timeout: nil,
+                     add_scores: false, scorer: nil, with_cursor: nil)
         @clauses = clauses
         unless @clauses.all?(AggregateClause)
           raise ArgumentError, "aggregate clauses must be Valkey::Search::AggregateClause objects"
@@ -240,6 +262,9 @@ class Valkey
         @slop = slop
         @dialect = Search.normalize_dialect(dialect)
         @timeout = timeout
+        @add_scores = add_scores
+        @scorer = scorer
+        @with_cursor = with_cursor
       end
 
       # @return [Array] FT.AGGREGATE option tokens (after `index query`), in wire order
@@ -253,6 +278,9 @@ class Valkey
         args.concat(Search.params_tokens(@params))
         args.push("DIALECT", @dialect) unless @dialect.nil?
         @clauses.each { |clause| args.concat(clause.to_args) }
+        args << "ADDSCORES" if @add_scores
+        args.push("SCORER", @scorer) unless @scorer.nil?
+        args.concat(@with_cursor.to_args) unless @with_cursor.nil?
         args
       end
 
@@ -263,8 +291,8 @@ class Valkey
         when nil then nil
         when :all, "*" then args.push("LOAD", "*")
         when Array
-          args.push("LOAD", @load.length, *@load) unless @load.empty?
-        else raise ArgumentError, "load must be an Array of fields, :all, or nil"
+          args.concat(Search.load_fields_to_args(@load))
+        else raise ArgumentError, "load must be an Array of fields/LoadField, :all, or nil"
         end
       end
     end

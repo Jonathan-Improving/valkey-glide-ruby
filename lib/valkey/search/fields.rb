@@ -35,6 +35,18 @@ class Valkey
       end
     end
 
+    # Append SORTABLE and, immediately after it, UNF — the only position
+    # valkey-search recognizes UNF in (the server's FT.CREATE parser only
+    # looks for UNF directly after SORTABLE, matching RediSearch).
+    #
+    # @api private
+    def self.append_sortable_unf_args(args, sortable, unf)
+      return unless sortable
+
+      args << "SORTABLE"
+      args << "UNF" if unf
+    end
+
     # A full-text (TEXT) field.
     #
     # @example
@@ -43,18 +55,27 @@ class Valkey
       # @param sortable [Boolean] emit SORTABLE
       # @param no_stem [Boolean] emit NOSTEM
       # @param weight [Numeric, nil] emit `WEIGHT <weight>`
-      def initialize(name, as: nil, sortable: false, no_stem: false, weight: nil)
+      # @param unf [Boolean] keeps the sorted value in its original
+      #   (un-normalized) form, e.g. preserving case, instead of the
+      #   default lowercased/simplified sort value (valkey-search 1.3.0;
+      #   a documented no-op on this engine, included for RediSearch wire
+      #   compatibility). Requires `sortable: true`.
+      # @raise [ArgumentError] if unf is set without sortable
+      def initialize(name, as: nil, sortable: false, no_stem: false, weight: nil, unf: false)
+        raise ArgumentError, "unf requires sortable: true" if unf && !sortable
+
         super(name, as: as)
         @sortable = sortable
         @no_stem = no_stem
         @weight = weight
+        @unf = unf
       end
 
       def type_args
         args = ["TEXT"]
         args << "NOSTEM" if @no_stem
         args.push("WEIGHT", @weight) unless @weight.nil?
-        args << "SORTABLE" if @sortable
+        Search.append_sortable_unf_args(args, @sortable, @unf)
         args
       end
     end
@@ -67,18 +88,24 @@ class Valkey
       # @param separator [String, nil] emit `SEPARATOR <sep>`
       # @param case_sensitive [Boolean] emit CASESENSITIVE
       # @param sortable [Boolean] emit SORTABLE
-      def initialize(name, as: nil, separator: nil, case_sensitive: false, sortable: false)
+      # @param unf [Boolean] see {TextField#initialize}'s `unf` docs.
+      #   Requires `sortable: true`.
+      # @raise [ArgumentError] if unf is set without sortable
+      def initialize(name, as: nil, separator: nil, case_sensitive: false, sortable: false, unf: false)
+        raise ArgumentError, "unf requires sortable: true" if unf && !sortable
+
         super(name, as: as)
         @separator = separator
         @case_sensitive = case_sensitive
         @sortable = sortable
+        @unf = unf
       end
 
       def type_args
         args = ["TAG"]
         args.push("SEPARATOR", @separator) unless @separator.nil?
         args << "CASESENSITIVE" if @case_sensitive
-        args << "SORTABLE" if @sortable
+        Search.append_sortable_unf_args(args, @sortable, @unf)
         args
       end
     end
@@ -89,14 +116,20 @@ class Valkey
     #   Valkey::Search::NumericField.new("price", sortable: true)
     class NumericField < Field
       # @param sortable [Boolean] emit SORTABLE
-      def initialize(name, as: nil, sortable: false)
+      # @param unf [Boolean] see {TextField#initialize}'s `unf` docs
+      #   (valkey-search 1.3.0). Requires `sortable: true`.
+      # @raise [ArgumentError] if unf is set without sortable
+      def initialize(name, as: nil, sortable: false, unf: false)
+        raise ArgumentError, "unf requires sortable: true" if unf && !sortable
+
         super(name, as: as)
         @sortable = sortable
+        @unf = unf
       end
 
       def type_args
         args = ["NUMERIC"]
-        args << "SORTABLE" if @sortable
+        Search.append_sortable_unf_args(args, @sortable, @unf)
         args
       end
     end

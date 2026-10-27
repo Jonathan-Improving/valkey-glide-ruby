@@ -87,6 +87,40 @@ class TestSearchQuery < Minitest::Test
     assert_equal %w[ALLSHARDS CONSISTENT], opts.to_args
   end
 
+  def test_in_keys
+    opts = Valkey::Search::SearchOptions.new(in_keys: %w[doc1 doc2])
+    assert_equal ["INKEYS", 2, "doc1", "doc2"], opts.to_args
+  end
+
+  def test_in_keys_empty_array_emits_inkeys_zero
+    opts = Valkey::Search::SearchOptions.new(in_keys: [])
+    assert_equal ["INKEYS", 0], opts.to_args
+  end
+
+  def test_count_option_emits_limit_zero_zero
+    opts = Valkey::Search::SearchOptions.new(count: true)
+    assert_equal %w[LIMIT 0 0], opts.to_args
+  end
+
+  def test_count_and_limit_mutually_exclusive
+    assert_raises(ArgumentError) { Valkey::Search::SearchOptions.new(count: true, limit: [0, 10]) }
+  end
+
+  def test_with_scores
+    opts = Valkey::Search::SearchOptions.new(with_scores: true)
+    assert_equal ["WITHSCORES"], opts.to_args
+  end
+
+  def test_scorer
+    opts = Valkey::Search::SearchOptions.new(scorer: "BM25STD")
+    assert_equal %w[SCORER BM25STD], opts.to_args
+  end
+
+  def test_with_scores_and_scorer_order
+    opts = Valkey::Search::SearchOptions.new(limit: [0, 10], with_scores: true, scorer: "BM25STD")
+    assert_equal ["LIMIT", 0, 10, "WITHSCORES", "SCORER", "BM25STD"], opts.to_args
+  end
+
   def test_full_option_order
     opts = Valkey::Search::SearchOptions.new(
       no_content: false, verbatim: true, in_order: true, slop: 1,
