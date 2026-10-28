@@ -15,6 +15,8 @@ class Valkey
       attr_reader :no_content
       # @return [Boolean] WITHSORTKEYS requested (the parser needs this)
       attr_reader :with_sort_keys
+      # @return [Boolean] WITHSCORES requested (the parser needs this)
+      attr_reader :with_scores
 
       # @param limit [Hash, Array, nil] { offset:, count: } or [offset, count]
       # @param return_fields [Array, nil] field name String/Symbol or { name:, as: } Hash
@@ -161,7 +163,7 @@ class Valkey
     #
     # @see https://redis.io/commands/ft.search/
     class SearchResult
-      Document = Struct.new(:key, :fields, :sort_key)
+      Document = Struct.new(:key, :fields, :sort_key, :score)
 
       # @return [Integer] total matching documents
       attr_reader :total_results
@@ -175,19 +177,30 @@ class Valkey
 
       # Parse a raw FT.SEARCH reply. Handles both the GLIDE normalized map form
       # ([count, { key => { field => value } }]) and the flat RESP2 array form,
-      # honoring no_content and with_sort_keys.
+      # honoring no_content, with_sort_keys and with_scores.
+      #
+      # Under WITHSCORES, glide-core reshapes each document's value by
+      # prepending the numeric score: [score, field_map] (score + no
+      # sort key), or [score, sort_key, field_map] when combined with
+      # WITHSORTKEYS. Without this, with_scores: true silently drops both
+      # the score and the field map, and (if combined with
+      # with_sort_keys) misreports the score as the sort key — the
+      # with_scores flag has to be threaded through explicitly rather than
+      # inferred from the reply shape, because a bare [x, y] pair is
+      # ambiguous between "[score, fields]" and "[sort_key, fields]"
+      # without knowing which flags were requested.
       #
       # @return [SearchResult]
-      def self.from_raw(raw, no_content: false, with_sort_keys: false)
+      def self.from_raw(raw, no_content: false, with_sort_keys: false, with_scores: false)
         return new(0, []) if raw.nil? || raw.empty?
 
         total = coerce_count(raw[0])
         rest = raw[1..] || []
         documents =
           if rest.length == 1 && rest[0].is_a?(Hash)
-            parse_map(rest[0], no_content: no_content, with_sort_keys: with_sort_keys)
+            parse_map(rest[0], no_content: no_content, with_sort_keys: with_sort_keys, with_scores: with_scores)
           else
-            parse_flat(rest, no_content: no_content, with_sort_keys: with_sort_keys)
+            parse_flat(rest, no_content: no_content, with_sort_keys: with_sort_keys, with_scores: with_scores)
           end
         new(total, documents)
       end
@@ -206,15 +219,36 @@ class Valkey
         raise TypeError, "FT.SEARCH reply had a non-integer count: #{value.inspect}"
       end
 
-      # GLIDE normalized map form: { key => value }. With content, value is the
-      # field map; under WITHSORTKEYS it is [sort_key, field_map]; under
-      # WITHSORTKEYS + NOCONTENT it is the bare sort key (no field map); under
-      # NOCONTENT alone it may be nil/empty.
-      def self.parse_map(map, no_content:, with_sort_keys:)
+      # GLIDE normalized map form: { key => value }. Without WITHSCORES,
+      # with content the value is the field map; under WITHSORTKEYS it is
+      # [sort_key, field_map]; under WITHSORTKEYS + NOCONTENT it is the
+      # bare sort key (no field map); under NOCONTENT alone it may be
+      # nil/empty.
+      #
+      # Under WITHSCORES, glide-core prepends the numeric score to the
+      # same shapes: [score, field_map], or [score, sort_key, field_map]
+      # when WITHSORTKEYS is also set. with_scores alone with NOCONTENT is
+      # [score] (no field map) — matching how WITHSORTKEYS + NOCONTENT
+      # drops to a bare scalar rather than a longer Array.
+      def self.parse_map(map, no_content:, with_sort_keys:, with_scores: false)
         map.map do |key, value|
+          score = nil
           sort_key = nil
           fields = {}
-          if with_sort_keys && value.is_a?(Array)
+          if with_scores && value.is_a?(Array)
+            score = value[0]
+            remainder = value[1..]
+            if with_sort_keys
+              sort_key = remainder[0]
+              fields = remainder[1] if remainder[1].is_a?(Hash)
+            elsif remainder[0].is_a?(Hash)
+              fields = remainder[0]
+            end
+          elsif with_scores && no_content
+            # WITHSCORES + NOCONTENT (no WITHSORTKEYS) — the value is the
+            # bare numeric score, not an Array.
+            score = value
+          elsif with_sort_keys && value.is_a?(Array)
             sort_key = value[0]
             fields = value[1] if value[1].is_a?(Hash)
           elsif with_sort_keys && no_content
@@ -224,16 +258,23 @@ class Valkey
           elsif !no_content && value.is_a?(Hash)
             fields = value
           end
-          Document.new(key, fields, sort_key)
+          Document.new(key, fields, sort_key, score)
         end
       end
 
-      def self.parse_flat(rest, no_content:, with_sort_keys:)
+      def self.parse_flat(rest, no_content:, with_sort_keys:, with_scores: false)
         documents = []
         i = 0
         while i < rest.length
           key = rest[i]
           i += 1
+          score = nil
+          if with_scores
+            raise TypeError, "FT.SEARCH reply truncated (missing score)" if i >= rest.length
+
+            score = rest[i]
+            i += 1
+          end
           sort_key = nil
           if with_sort_keys
             # bounds-check every read past the KEY so a truncated reply
@@ -255,7 +296,7 @@ class Valkey
             # escapes ft_search as a non-Valkey error.
             fields = pairs.each_slice(2).to_h { |k, v| [k, v] } if pairs.is_a?(Array)
           end
-          documents << Document.new(key, fields, sort_key)
+          documents << Document.new(key, fields, sort_key, score)
         end
         documents
       end

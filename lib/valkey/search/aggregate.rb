@@ -38,6 +38,62 @@ class Valkey
         new("COUNT", as: as)
       end
 
+      # TOLIST — collects all values for +property+ across the records in a
+      # group into a single array, removing duplicates and nil values. If a
+      # value is itself an array, it is flattened one level before being
+      # added. Values are returned in the order they were first encountered
+      # (valkey-search 1.3.0, #932; #7335/AEA-557).
+      #
+      # @param property [String] the property whose values are collected
+      # @param as [String, nil] optional AS alias
+      # @example
+      #   Valkey::Search::Reducer.to_list("@color", as: "colors")
+      def self.to_list(property, as: nil)
+        new("TOLIST", property, as: as)
+      end
+
+      # FIRST_VALUE — returns the value of +property+ from a single record
+      # in the group. Without +by+, the first record encountered wins. With
+      # +by+, the record whose +by+ property is smallest (+order: :asc+,
+      # the default) or largest (+order: :desc+) wins; ties keep the
+      # first-encountered record (valkey-search 1.3.0, #946; #7335/AEA-557).
+      #
+      # @param property [String] the property whose value is returned
+      # @param by [String, nil] the property used to choose the winning
+      #   record. Required if +order+ is given.
+      # @param order [Symbol, nil] :asc (default on the server when +by+ is
+      #   set without +order+) or :desc
+      # @param as [String, nil] optional AS alias
+      # @raise [ArgumentError] if +order+ is given without +by+
+      # @example
+      #   Valkey::Search::Reducer.first_value("@title", as: "any_title")
+      #   Valkey::Search::Reducer.first_value("@title", by: "@price", order: :desc, as: "most_expensive_title")
+      def self.first_value(property, by: nil, order: nil, as: nil)
+        raise ArgumentError, "first_value: order requires by to be set" if !order.nil? && by.nil?
+
+        args = [property]
+        unless by.nil?
+          args.push("BY", by)
+          args.push(Search.lookup_token(Search::SORT_ORDERS, order, "sort order")) unless order.nil?
+        end
+        new("FIRST_VALUE", *args, as: as)
+      end
+
+      # RANDOM_SAMPLE — returns a uniform random sample of up to +size+
+      # values of +property+ from the records in a group, using reservoir
+      # sampling (valkey-search 1.3.0, #949; #7335/AEA-557).
+      #
+      # @param property [String] the property to sample values from
+      # @param size [Integer] the maximum number of values to sample. Must
+      #   be a non-negative integer no greater than 1000; the server
+      #   rejects values outside this range.
+      # @param as [String, nil] optional AS alias
+      # @example
+      #   Valkey::Search::Reducer.random_sample("@score", 5, as: "score_sample")
+      def self.random_sample(property, size, as: nil)
+        new("RANDOM_SAMPLE", property, size.to_s, as: as)
+      end
+
       # Defines Reducer.count_distinct/.sum/.min/.max/.avg/.stddev, each taking a
       # single property, from {Search::REDUCER_FUNCTIONS} (skipping COUNT, which
       # takes no property and is defined explicitly above). One definition per
@@ -244,7 +300,7 @@ class Valkey
       #   two-element array of `[rows, cursor_id]`. A paged query, and every
       #   subsequent {Valkey::Commands::VectorSearchCommands#ft_cursor_read}/`#ft_cursor_del`
       #   against the cursor it opens, always reads from the PRIMARY of the
-      #   index's slot regardless of ReadFrom (D15) — a cursor is a
+      #   index's slot regardless of ReadFrom — a cursor is a
       #   per-process, node-local server resource. A plain aggregate without
       #   `with_cursor` is unaffected and still prefers replicas as normal.
       def initialize(clauses: [], load: nil, params: nil, verbatim: false,

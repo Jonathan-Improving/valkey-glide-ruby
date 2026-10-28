@@ -146,7 +146,8 @@ class Valkey
                    Valkey::Search::SearchOptions.new
         raw = send_command(RequestType::FT_SEARCH, [index, query] + resolved.to_args)
         Valkey::Search::SearchResult.from_raw(
-          raw, no_content: resolved.no_content, with_sort_keys: resolved.with_sort_keys
+          raw, no_content: resolved.no_content, with_sort_keys: resolved.with_sort_keys,
+               with_scores: resolved.with_scores
         )
       end
 
@@ -278,7 +279,7 @@ class Valkey
       # `RequestType::FT_CURSOR_READ` — see {#ft_hybrid}'s Limitations.
       #
       # Always reads from the PRIMARY of the index's slot in cluster mode
-      # (D15), regardless of the client's ReadFrom configuration — a cursor
+      # , regardless of the client's ReadFrom configuration — a cursor
       # is a per-process, node-local server resource, and a read routed to a
       # different node fails with "Cursor not found". A cursor opened by
       # FT.HYBRID is read the same way as one opened by FT.AGGREGATE; the
@@ -317,7 +318,7 @@ class Valkey
       # `RequestType::FT_CURSOR_DEL` — see {#ft_hybrid}'s Limitations.
       #
       # Always reads from the PRIMARY of the index's slot in cluster mode
-      # (D15) — see {#ft_cursor_read}'s routing note.
+      # — see {#ft_cursor_read}'s routing note.
       #
       # @param index [String] the index name the cursor was opened against
       # @param cursor_id [Integer] the cursor id to delete
@@ -418,7 +419,7 @@ class Valkey
         Valkey::Route.all_primaries
       end
 
-      # A cursor is a per-process, node-local server resource (D15). FT.CURSOR
+      # A cursor is a per-process, node-local server resource. FT.CURSOR
       # READ/DEL and every WITHCURSOR-opening query must therefore pin to the
       # PRIMARY that holds the cursor: the index's own slot, not an arbitrary
       # node. Returns nil on standalone (and wherever routing is unavailable,

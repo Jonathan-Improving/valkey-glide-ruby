@@ -2,8 +2,10 @@
 # Starts standalone + cluster Valkey servers with modules (Search, JSON,
 # Bloom, LDAP) via Docker, on dedicated ports, and verifies MODULE LIST on
 # every node. Adapted from valkey-glide's utils/start-valkey-docker-modules.sh
-# (the main repo's shared CI/local-reproduction script) for this repo, which
-# has no module-test harness yet (PG-14).
+# (the main repo's shared CI/local-reproduction script) for this repo's
+# valkey-search 1.3 suite, which needs a source-built rc2 .so
+# (BUILD-MODULES-1.3.md) the existing module-tests CI job's pinned
+# valkey-bundle:9.1.3 image does not ship.
 #
 # Every container runs with --network host, which Docker Desktop on macOS
 # requires enabling separately (Settings > Resources > Network > "Enable

@@ -4,8 +4,9 @@ module Helper
   # Classifies whether the connected valkey-search module supports 1.3
   # features, and reads its active `search.emulate-release` compatibility
   # level, against a real server rather than the vendored RediSearch .so
-  # test/support/ uses elsewhere (PG-14: valkey-search 1.3 module-test
-  # harness). Mirrors Python's `requires_search_1_3` capability probe and
+  # test/support/ uses elsewhere. No module-test harness against a real
+  # valkey-search module existed in this repo before this port. Mirrors
+  # Python's `requires_search_1_3` capability probe and
   # `emulate_release_level` fixture from #7335 (`python/tests/conftest.py`).
   module SearchCapability
     # Raised when the probe cannot even create a test index — the search

@@ -42,6 +42,29 @@ class SearchHybridTest < Minitest::Test
     assert_equal ["VSIM", "@vec", "$gen123"], arm.to_args(generated_param_name: "$gen123")
   end
 
+  # H3: param reference must be decided by Ruby type/encoding, never by the
+  # vector's leading byte. Binary-encoded bytes whose first byte happens to
+  # be 0x24 ("$") must still be treated as raw vector data requiring a
+  # generated PARAMS entry, not misread as a parameter reference.
+  def test_vsim_arm_binary_bytes_starting_with_dollar_sign_are_not_a_reference
+    raw_vector = [1.0000043, 0.2].pack("e*").b
+    assert_equal "$".b, raw_vector.byteslice(0, 1), "fixture must actually start with the $ byte (0x24)"
+    arm = Valkey::Search::HybridVsimArm.new("vec", raw_vector)
+    refute arm.param_reference?, "binary-encoded bytes starting with 0x24 must not be treated as a $ reference"
+    assert_raises(ArgumentError) { arm.to_args }
+    args = arm.to_args(generated_param_name: "$gen456")
+    assert_equal ["VSIM", "@vec", "$gen456"], args
+  end
+
+  # A non-binary String starting with "$" is still a reference, regardless
+  # of its encoding being the Ruby default (UTF-8) rather than explicitly
+  # binary -- the type/encoding check, not the byte value, is what matters.
+  def test_vsim_arm_utf8_dollar_string_is_a_reference
+    arm = Valkey::Search::HybridVsimArm.new("vec", "$named_param")
+    assert arm.param_reference?
+    assert_equal ["VSIM", "@vec", "$named_param"], arm.to_args
+  end
+
   def test_vsim_arm_knn_block
     arm = Valkey::Search::HybridVsimArm.new("vec", "$v", k: 10, ef_runtime: 50, shard_k_ratio: 0.5)
     assert_equal ["VSIM", "@vec", "$v", "KNN", 6, "K", 10, "EF_RUNTIME", 50, "SHARD_K_RATIO", 0.5], arm.to_args

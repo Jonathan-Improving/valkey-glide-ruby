@@ -75,7 +75,7 @@ class Valkey
     # {Valkey::Commands::VectorSearchCommands#ft_cursor_del} against the cursor it opens, is
     # pinned to the PRIMARY of the index's own slot regardless of ReadFrom — a
     # cursor is a per-process, node-local server resource, and this is a
-    # deliberate, documented exception to GLIDE's normal read routing (D15).
+    # deliberate, documented exception to GLIDE's normal read routing.
     #
     # @example
     #   Valkey::Search::WithCursor.new(count: 10, maxidle: 5000)

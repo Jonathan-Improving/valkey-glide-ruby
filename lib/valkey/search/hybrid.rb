@@ -116,23 +116,23 @@ class Valkey
     # a vector field, run alongside the SEARCH arm and fused with it.
     #
     # The query vector can be given two ways:
-    # - As raw bytes (or any String not starting with `$`): the client
-    #   generates an internal `$`-prefixed PARAMS entry and references it on
-    #   the wire. FT.HYBRID's VSIM clause has no wire-level inline vector
-    #   literal — the parameter token must start with `$` or the server
-    #   rejects it ("VSIM: vector parameter must start with '$'").
-    # - As an explicit `$name` String: the caller manages their own entry in
-    #   {HybridOptions#params}.
+    # - As raw bytes (any binary-encoded String, or any non-binary String
+    #   not starting with `$`): the client generates an internal
+    #   `$`-prefixed PARAMS entry and references it on the wire. FT.HYBRID's
+    #   VSIM clause has no wire-level inline vector literal — the parameter
+    #   token must start with `$` or the server rejects it ("VSIM: vector
+    #   parameter must start with '$'").
+    # - As an explicit `$name` String (non-binary encoding): the caller
+    #   manages their own entry in {HybridOptions#params}.
     #
-    # A String starting with `$` is always treated as a parameter reference;
-    # anything passed as Ruby `String#b`/binary-encoded vector bytes that
-    # happens to start with the byte `0x24` ("$") is NOT special-cased here —
-    # callers passing raw vector bytes must not use a leading-`$` String for
-    # that purpose, matching Python/Go's bytes-vs-string distinction as
-    # closely as Ruby's single String type allows. Pass vector bytes as a
-    # String with `.b` (ASCII-8BIT) encoding for clarity; only a String whose
-    # *encoding* is not binary AND that starts with `$` is treated as a
-    # reference — see {#param_reference?}.
+    # The decision is made by Ruby type/encoding, never by the vector's
+    # leading byte — see {#param_reference?}. A binary-encoded
+    # (`String#b`/ASCII-8BIT) vector is always raw vector data, even if it
+    # happens to start with the byte `0x24` ("$"); callers passing raw
+    # vector bytes should use `.b` so the encoding alone disambiguates
+    # them from an intentional `$name` reference, matching Python/Go's
+    # bytes-vs-string distinction as closely as Ruby's single String type
+    # allows.
     #
     # @example
     #   Valkey::Search::HybridVsimArm.new("vec", query_vector_bytes, k: 10)
@@ -172,9 +172,16 @@ class Valkey
       end
 
       # @return [Boolean] true if +vector+ is a `$name` parameter reference
-      #   rather than raw vector bytes requiring a generated PARAMS entry
+      #   rather than raw vector bytes requiring a generated PARAMS entry.
+      #   Decided by Ruby type/encoding, never by the vector's leading
+      #   byte: a binary-encoded (ASCII-8BIT) String is always raw vector
+      #   data, even when its first byte happens to be `0x24` ("$") —
+      #   matching Python/Go's bytes-vs-string distinction (the port rule
+      #   "param reference by type, not by leading byte"). Only a String
+      #   whose encoding is NOT binary AND that starts with `$` counts as
+      #   a reference.
       def param_reference?
-        @vector.is_a?(String) && @vector.start_with?("$")
+        @vector.is_a?(String) && @vector.encoding != Encoding::ASCII_8BIT && @vector.start_with?("$")
       end
 
       # @param generated_param_name [String, nil] the `$`-prefixed name to

@@ -3,8 +3,11 @@
 # Docker-based standalone + cluster Valkey deployment with real valkey-search
 # modules loaded -- not the vendored RediSearch .so test/support/ files use
 # for the rest of the suite. Adapted from valkey-glide's
-# utils/run-modules-ci-locally.sh for this repo (PG-14: no module-test
-# harness existed here before this port).
+# utils/run-modules-ci-locally.sh. ci.yml's existing module-tests job already
+# runs the vendored-.so-backed Module/Json/VectorSearch lint tests against
+# valkey-bundle:9.1.3 via the shared start-valkey-docker action; this script
+# is for the valkey-search 1.3 surface specifically, which needs a
+# source-built rc2 .so (BUILD-MODULES-1.3.md) that no bundle tag ships.
 #
 # Usage: three image/release combinations, matching the port's three
 # required local configurations:
